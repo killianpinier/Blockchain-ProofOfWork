@@ -1,12 +1,13 @@
-use std::time::{SystemTime, UNIX_EPOCH, SystemTimeError};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::fmt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use crate::crypto;
 
-use crate::{transaction::{Transaction, TxOut}, utils::{self, crypto::leading_zeros_count}};
+use crate::transaction::{Transaction, TxOut};
 
 const PUB_KEY_HASH_SIZE: usize = 20;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Block {
     index: u32,
     hash: [u8; 32],
@@ -21,14 +22,14 @@ pub struct Block {
 impl Block {
 
     pub fn new() -> Block{
-        Block { 
-            index: 0, 
-            hash: [0; 32], 
+        Block {
+            index: 0,
+            hash: [0; 32],
             prev_hash: [0; 32],
-            nonce: 0,  
+            nonce: 0,
             merkle_root: [0; 32],
-            timestamp: 0, 
-            transactions: Vec::new() 
+            timestamp: 0,
+            transactions: Vec::new()
         }
     }
 
@@ -47,13 +48,13 @@ impl Block {
 
     pub fn calculate_hash(&mut self) {
         let data = self.concatenate();
-        utils::crypto::calculate_sha256_hash(data.as_bytes(), &mut self.hash );
+        crypto::calculate_sha256_hash(data.as_bytes(), &mut self.hash );
     }
 
     fn mine_until_done(&mut self, difficulty: u8) {
         self.calculate_hash();
 
-        while leading_zeros_count(&hex::encode(&self.hash)) < difficulty {
+        while crypto::leading_zeros_count(&hex::encode(&self.hash)) < difficulty {
             self.nonce += 1;
             self.calculate_hash();
         }
@@ -83,6 +84,7 @@ impl Block {
 // --- Getters/Setters
 impl Block {
     pub fn get_hash(&self) -> &[u8; 32] { &self.hash }
+    pub fn get_index(&self) -> u32 { self.index }
     pub fn get_transactions(&self) -> &Vec<Transaction> {
         &self.transactions
     }
@@ -91,14 +93,8 @@ impl Block {
         self.index = index;
     }
 
-    pub fn set_prev_hash_from_block(&mut self, prev_block: Option<&Block>) -> bool {
-        if let Some(prev_block) = prev_block {
-            self.prev_hash = prev_block.hash;
-        } else {
-            return false;
-        }
-
-        true
+    pub fn set_prev_hash_from_block(&mut self, prev_block: &Block) {
+        self.prev_hash = prev_block.hash;
     }
 }
 

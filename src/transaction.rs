@@ -16,8 +16,8 @@
 
 use std::fmt;
 
-use crate::utils;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use crate::crypto;
 
 // Size in bytes
 const TRANSACTION_HASH_SIZE: usize = 32;
@@ -36,28 +36,28 @@ impl UTXO {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxIn {
     n: usize,
     prev_utxo: [u8; TRANSACTION_HASH_SIZE],
     public_key: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TxOut {
     amount: f32,
     destination: [u8; PUB_KEY_HASH_SIZE], // Hash of the public key (Ripemd160(Sha256(PubKey)))
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     hash: [u8; TRANSACTION_HASH_SIZE],
     tx_in_sz: usize,
     tx_out_sz: usize,
     signature: String,
 
-    inputs: Vec<TxIn>, 
-    outputs: Vec<TxOut>, 
+    inputs: Vec<TxIn>,
+    outputs: Vec<TxOut>,
 }
 
 
@@ -82,9 +82,9 @@ impl Transaction {
 
     // --- Public
     pub fn new(inputs: Vec<TxIn>, outputs: Vec<TxOut>) -> Transaction {
-        let tx = Transaction { 
+        let tx = Transaction {
             hash: [0u8; TRANSACTION_HASH_SIZE],
-            tx_in_sz: inputs.len(), 
+            tx_in_sz: inputs.len(),
             tx_out_sz: outputs.len(),
             signature: String::new(),
             inputs,
@@ -96,7 +96,7 @@ impl Transaction {
 
     // Calculate and set hash to transaction
     pub fn hash(&mut self) {
-        utils::crypto::calculate_sha256_hash(self.get_transaction_data(true).as_bytes(),&mut self.hash);
+        crypto::calculate_sha256_hash(self.get_transaction_data(true).as_bytes(),&mut self.hash);
     }
 
     pub fn add_tx_input(&mut self, tx_in: TxIn) {
@@ -132,10 +132,10 @@ impl Transaction {
         let mut data = String::new();
         for input in &self.inputs {
             let mut cur_tx_in_hash = [0u8; TRANSACTION_HASH_SIZE];
-            let mut cur_tx_in_data = input.n.to_string()
+            let cur_tx_in_data = input.n.to_string()
                 + &hex::encode(input.prev_utxo)
                 + &input.public_key;
-            utils::crypto::calculate_sha256_hash(cur_tx_in_data.as_bytes(), &mut cur_tx_in_hash);
+            crypto::calculate_sha256_hash(cur_tx_in_data.as_bytes(), &mut cur_tx_in_hash);
             data.push_str(&hex::encode(cur_tx_in_hash));
         }
 
@@ -147,7 +147,7 @@ impl Transaction {
         for output in &self.outputs {
             let mut cur_tx_out_hash = [0u8; TRANSACTION_HASH_SIZE];
             let cur_tx_out_data = output.amount.to_string() + &hex::encode(&output.destination);
-            utils::crypto::calculate_sha256_hash(cur_tx_out_data.as_bytes(), &mut cur_tx_out_hash);
+            crypto::calculate_sha256_hash(cur_tx_out_data.as_bytes(), &mut cur_tx_out_hash);
             data.push_str(&hex::encode(cur_tx_out_hash));
         }
 
@@ -158,7 +158,7 @@ impl Transaction {
         let data = self.get_concatenated_inputs();
         let mut inputs_hash = [0u8; TRANSACTION_HASH_SIZE];
 
-        utils::crypto::calculate_sha256_hash(data.as_bytes(), &mut inputs_hash);
+        crypto::calculate_sha256_hash(data.as_bytes(), &mut inputs_hash);
         inputs_hash
     }
 
@@ -166,7 +166,7 @@ impl Transaction {
         let data = self.get_concatenated_outputs();
         let mut outputs_hash = [0u8; TRANSACTION_HASH_SIZE];
 
-        utils::crypto::calculate_sha256_hash(data.as_bytes(), &mut outputs_hash);
+        crypto::calculate_sha256_hash(data.as_bytes(), &mut outputs_hash);
         outputs_hash
     }
 }

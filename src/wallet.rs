@@ -1,34 +1,54 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write, Read};
 
 use k256::ecdsa::SigningKey;
+use thiserror::Error;
 
 use crate::blockchain::Blockchain;
 use crate::cli::{CLICommandExec, Command, Instruction};
+use crate::crypto;
+use crate::database::Database;
 use crate::transaction::{Transaction, TxIn, TxOut, UTXO};
-use crate::utils::crypto;
+
+#[derive(Error, Debug)]
+pub enum WalletError {
+    Io(#[from] io::Error),
+    InvalidTxSig,
+    IndexOutOfRange,
+    InvalidSigningKey,
+    NotEnoughFunds,
+    HexDecode(#[from] hex::FromHexError),
+    CryptoError(#[from] crypto::CryptoError)
+}
+
+pub type Result<T> = std::result::Result<T, WalletError>;
+
+impl std::fmt::Display for WalletError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "wallet error")
+    }
+}
 
 pub struct Wallet {
     private_keys: Vec<[u8; 32]>,
     current_private_key: usize,
     storage_file_name: String,
     utxo : Vec<UTXO>,
-    blockchain: Rc<RefCell<Blockchain>>,
+    database: Rc<Database>,
 }
 
 // ------ General
 impl Wallet {
 
     // ------ Public
-    pub fn new(blockchain: Rc<RefCell<Blockchain>>, storage_file_name: String) -> Wallet {
-        Wallet { private_keys: Vec::new(), current_private_key: 0, blockchain, utxo: Vec::new(), storage_file_name }
+    pub fn new(database: Rc<Database>, storage_file_name: String) -> Wallet {
+        Wallet { private_keys: Vec::new(), current_private_key: 0, database, utxo: Vec::new(), storage_file_name }
     }
 
     pub fn initialize(&mut self) {
-        if let Err(e) = self.get_keys_from_file() {
+        if let Err(_) = self.get_keys_from_file() {
             panic!("Wallet was not initialized properly: error while getting keys from file.")
         }
         self.get_and_set_utxo();
@@ -36,7 +56,7 @@ impl Wallet {
 
     // ------ Private
     // --- Keys management
-    fn create_and_store_private_key(&mut self) -> Result<(), Box<dyn Error>> {
+    fn create_and_store_private_key(&mut self) -> Result<()> {
         let private_key = self.generate_private_key();
         self.store_private_key(private_key)?;
         Ok(())
@@ -49,18 +69,18 @@ impl Wallet {
         hex::encode(private_key)
     }
 
-    fn get_signing_key(&self, index: usize) -> Result<SigningKey, &'static str> {
+    fn get_signing_key(&self, index: usize) -> Result<SigningKey> {
         if index < self.private_keys.len() {
             if let Ok(signing_key) = SigningKey::from_slice(&self.private_keys[index]) {
                 return Ok(signing_key);
             }
-            return Err("Failed getting signing key");
+            return Err(WalletError::InvalidSigningKey);
         }
-        Err("Error getting signing key: index out of range")
+        Err(WalletError::IndexOutOfRange)
     }
 
     // Create private key if file is empty, otherwise add keys into 'private_keys'
-    fn get_keys_from_file(&mut self) -> Result<(), Box<dyn Error>> {
+    fn get_keys_from_file(&mut self) -> Result<()> {
         let mut buffer = String::new();
         self.read_file(&mut buffer)?;
 
@@ -77,7 +97,7 @@ impl Wallet {
         Ok(())
     }
 
-    fn add_key_to_wallet(&mut self, line: &str) -> Result<(), Box<dyn Error>> {
+    fn add_key_to_wallet(&mut self, line: &str) -> Result<()> {
         let mut key = [0u8; 32];
         key.copy_from_slice(hex::decode(line)?.as_slice());
         if !self.private_keys.contains(&key) {
@@ -86,7 +106,7 @@ impl Wallet {
         Ok(())
     }
 
-    fn store_private_key(&self, key: String) -> Result<(), Box<dyn Error>> {
+    fn store_private_key(&self, key: String) -> Result<()> {
         let mut file = self.get_file()?;
         writeln!(file, "{}", key)?;
         Ok(())
@@ -94,10 +114,8 @@ impl Wallet {
 
 
     // --- Transaction management
-    fn create_transaction(&self, amount: f32, destination: [u8; 20]) -> Result<Transaction, &str> {
+    fn create_transaction(&self, amount: f32, destination: [u8; 20]) -> Result<Transaction> {
         let inputs_total_amount = self.utxo[0].amount + self.utxo[1].amount;
-
-        println!("{} - {}", self.utxo[0].n, amount);
 
         match self.get_public_key_hash() {
             Ok(wallet_pub_key_hash) => {
@@ -123,13 +141,13 @@ impl Wallet {
                     return Ok(Transaction::new(inputs, outputs));
                 }
 
-                return Err("not enough coins")
+                return Err(WalletError::NotEnoughFunds)
             }
             Err(e) => Err(e)
         }
     }
 
-    fn sign_tx(&self, tx: &mut Transaction) -> Result<(), &'static str> {
+    fn sign_tx(&self, tx: &mut Transaction) -> Result<()> {
         if let Ok(signing_key) = self.get_signing_key(self.current_private_key) {
             // Transaction data
             let mut transaction_data_buffer = [0u8; 32];
@@ -144,7 +162,8 @@ impl Wallet {
             }
         }
 
-        Err("Error: could not sign transaction")
+        //Err("Error: could not sign transaction")
+        Err(WalletError::InvalidSigningKey)
     }
 
     fn get_and_set_utxo(&mut self) {
@@ -154,18 +173,21 @@ impl Wallet {
 
 
     // --- Private keys file management
-    fn read_file(&self, buffer: &mut String) -> Result<(), Box<dyn Error>> {
+    fn read_file(&self, buffer: &mut String) -> Result<()> {
         let mut file = self.get_file()?;
         file.read_to_string( buffer)?;
         Ok(())
     }
 
-    fn get_file(&self) -> io::Result<File> {
-        OpenOptions::new()
+    fn get_file(&self) -> Result<File> {
+        match OpenOptions::new()
             .read(true)
             .append(true)
             .create(true)
-            .open("keys.txt")
+            .open("keys.txt") {
+            Ok(f) => Ok(f),
+            Err(e) => Err(WalletError::Io(e)),
+        }
     }
 }
 
@@ -178,15 +200,15 @@ impl Wallet {
         );
     }
 
-    pub fn get_address(&self, index: usize) -> Result<String, &'static str> {
+    pub fn get_address(&self, index: usize) -> Result<String> {
         if index < self.private_keys.len() {
             let signing_key = self.get_signing_key(index);
             if let Ok(result) = signing_key {
                 return Ok(crypto::get_address(result));
             }
-            return Err("failed converting private key (as bytes) to SigningKey");
+            return Err(WalletError::InvalidSigningKey);
         }
-        Err("index out of range")
+        Err(WalletError::IndexOutOfRange)
     }
 
     pub fn get_private_key(&self, index: usize) -> Option<[u8; 32]> {
@@ -196,13 +218,11 @@ impl Wallet {
         None
     }
 
-    pub fn get_public_key_hash(&self) -> Result<[u8; 20], &str> {
+    pub fn get_public_key_hash(&self) -> Result<[u8; 20]> {
         match self.get_address(self.current_private_key) {
             Ok(address) => {
-                match crypto::address_to_public_key_hash(&address) {
-                    Ok(pub_key_hash) => Ok(pub_key_hash),
-                    Err(e) => Err(e)
-                }
+                let pub_key_hash = crypto::address_to_public_key_hash(&address)?;
+                Ok(pub_key_hash)
             },
             Err(e) => Err(e)
         }
@@ -296,7 +316,7 @@ mod tests {
 
     //#[test]
     fn test_wallet_creation() {
-        let mut wallet = Wallet::new(Rc::new(RefCell::new(Blockchain::new(1))), String::from("keys.txt"));
+        let mut wallet = Wallet::new(Rc::new(Database::open("database-test").unwrap()), String::from("keys.txt"));
         wallet.initialize();
 
         assert_eq!(wallet.get_address(0).unwrap(), crypto::get_address(SigningKey::from_slice(&wallet.get_private_key(0).unwrap()).unwrap()))
@@ -304,7 +324,7 @@ mod tests {
 
     //#[test]
     fn test_wallet_creation_from_file() {
-        let mut wallet = Wallet::new(Rc::new(RefCell::new(Blockchain::new(1))), String::from("keys.txt"));
+        let mut wallet = Wallet::new(Rc::new(Database::open("database-test").unwrap()), String::from("keys.txt"));
         wallet.initialize();
         wallet.create_and_store_private_key();
         println!("{}", wallet.get_address(0).unwrap());
@@ -315,7 +335,7 @@ mod tests {
 
     //#[test]
     fn test_transaction_signature() {
-        let mut wallet = Wallet::new(Rc::new(RefCell::new(Blockchain::new(1))), String::from("keys.txt"));
+        let mut wallet = Wallet::new(Rc::new(Database::open("database-test").unwrap()), String::from("keys.txt"));
         wallet.initialize();
 
         // Create test Transaction

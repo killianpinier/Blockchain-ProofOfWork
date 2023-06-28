@@ -5,7 +5,7 @@ use std::collections::LinkedList;
 use std::fmt;
 
 use crate::block::Block;
-use crate::utils;
+use crate::crypto;
 
 const INITIAL_MINING_REWARD: f32 = 25.0;
 const PUB_KEY_HASH_SIZE: usize = 20;
@@ -23,19 +23,19 @@ impl Blockchain {
         let mut genesis = Block::new();
 
         genesis.set_index(0);
-        genesis.mine(difficulty, INITIAL_MINING_REWARD, utils::crypto::address_to_public_key_hash(&String::from("128GaUUoKKnEgioDsm5Pa9FxmXtzQMk3F9")).unwrap())
+        genesis.mine(difficulty, INITIAL_MINING_REWARD, crypto::address_to_public_key_hash(&String::from("128GaUUoKKnEgioDsm5Pa9FxmXtzQMk3F9")).unwrap())
             .expect("Could not add genesis block");
-        blockchain.chain.push_back(genesis);
         blockchain
     }
 
     pub fn mine_and_add_block(&mut self, mut block: Block, miner_addr: [u8; PUB_KEY_HASH_SIZE]) -> bool {
-        block.set_index(self.chain.len() as u32);
-        block.set_prev_hash_from_block(self.chain.back());
-        block.mine(self.difficulty, self.reward, miner_addr);
-
-        self.chain.push_back(block);
-
+        // block.set_index(self.chain.len() as u32);
+        // block.set_prev_hash_from_block(self.chain.back());
+        // block.mine(self.difficulty, self.reward, miner_addr);
+        //
+        // self.chain.push_back(block);
+        //
+        // true
         true
     }
 

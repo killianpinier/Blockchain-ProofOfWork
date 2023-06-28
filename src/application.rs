@@ -4,12 +4,11 @@ use std::cell::RefCell;
 use crate::miner::Miner;
 use crate::wallet::Wallet;
 use crate::blockchain::Blockchain;
-use crate::cli::{CLI, Program, Command, CLICommandExec};
-
-use crate::testing::tx_generation::{generate_tx};
+use crate::cli::{CLI, Program, CLICommandExec};
+use crate::database::Database;
 
 pub struct Application {
-    blockchain: Rc<RefCell<Blockchain>>,
+    database: Rc<Database>,
     miner: Miner,
     wallet: Wallet,
 }
@@ -17,21 +16,26 @@ pub struct Application {
 
 impl Application {
     pub fn new(difficulty: u8) -> Application {
-        let blockchain: Rc<RefCell<Blockchain>> = Rc::new(RefCell::new(Blockchain::new(difficulty)));
+        let database = match Database::open("database") {
+            Ok(db) => db,
+            Err(e) => panic!("{}", e),
+        };
+
+        let database = Rc::new(database);
 
         // Create and initialize wallet
-        let mut wallet: Wallet = Wallet::new(Rc::clone(&blockchain), String::from("keys.txt"));
+        let mut wallet: Wallet = Wallet::new(Rc::clone(&database), String::from("keys.txt"));
         wallet.initialize();
 
         // Create and initialize miner
         let miner;
-        if let Ok(address) = wallet.get_address(0) {
-            miner = Miner::new(address.clone(), Rc::clone(&blockchain));
-        } else {
-            panic!("Wallet was not initialized properly: could not get default address")
+
+        match wallet.get_address(0) {
+            Ok(address) => miner = Miner::new(address.clone(), Rc::clone(&database), difficulty),
+            Err(_) => panic!("Wallet was not initialized properly: could not get default address")
         }
 
-        Application { blockchain, miner, wallet }
+        Application { database, miner, wallet }
     }
 
 

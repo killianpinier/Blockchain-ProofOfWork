@@ -65,7 +65,7 @@ impl CLI {
 
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
-            Ok(n) => self.parse_instruction(input),
+            Ok(_) => self.parse_instruction(input),
             Err(e) => {
                 println!("Error: {e}");
                 return None;

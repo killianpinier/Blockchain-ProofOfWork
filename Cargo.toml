@@ -1,5 +1,5 @@
 [package]
-name = "blockchain_PoW_v2"
+name = "blockchain_pow"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,3 +16,4 @@ rocksdb = "0.21.0"
 serde = { version = "1.0.163", features = ["derive"] }
 serde_json = "1.0.96"
 sha2 = "0.10.6"
+thiserror = "1.0.40"

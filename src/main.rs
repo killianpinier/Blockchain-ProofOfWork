@@ -1,18 +1,4 @@
-
-mod transaction;
-mod block;
-mod utils;
-mod miner;
-mod blockchain;
-mod wallet;
-mod testing;
-mod application;
-mod cli;
-mod database;
-
-use crate::application::Application;
-use crate::cli::CLI;
-use crate::wallet::Wallet;
+use blockchain_pow::application::Application;
 
 fn main() {
     let mut app = Application::new(2);

@@ -1,14 +1,28 @@
-use std::error::Error;
 use sha2::{Sha256, Digest};
 use rand_core::OsRng;
 use ripemd::Ripemd160;
 use base58::{FromBase58, ToBase58};
-use hex;
 
-use k256::ecdsa::DerSignature;
-use k256::{ecdsa::{SigningKey, Signature, signature::Signer}, PublicKey, SecretKey};
-use k256::{EncodedPoint, ecdsa::{VerifyingKey, signature::Verifier}};
+use k256::{ecdsa::{SigningKey, Signature, signature::Signer}, PublicKey};
+use k256::{ecdsa::{VerifyingKey, signature::Verifier}};
 use k256::ecdsa::signature::SignatureEncoding;
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum CryptoError {
+    Base58DecodeError,
+    InvalidPubKey,
+    InvalidSignature
+}
+
+pub type Result<T> = std::result::Result<T, CryptoError>;
+
+impl std::fmt::Display for CryptoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "crypto error")
+    }
+}
 
 
 pub fn calculate_sha256_hash(data: &[u8], buf : &mut [u8]) {
@@ -51,7 +65,7 @@ pub fn get_address(signing_key: SigningKey) -> String {
     result.to_base58()
 }
 
-pub fn address_to_public_key_hash(address: &String) -> Result<[u8; 20], &'static str> {
+pub fn address_to_public_key_hash(address: &String) -> Result<[u8; 20]> {
     if let Ok(mut pub_key_hash) = address.from_base58() {
         if pub_key_hash.len() == 25 {
             pub_key_hash.remove(0);
@@ -63,7 +77,7 @@ pub fn address_to_public_key_hash(address: &String) -> Result<[u8; 20], &'static
             return Ok(result);
         }
     }
-    Err("failed converting address from base58")
+    Err(CryptoError::Base58DecodeError)
 }
 
 // --- Keys/Address creation
@@ -105,23 +119,24 @@ pub fn get_signature(signing_key: &SigningKey, data: &[u8]) -> Vec<u8> {
 
 
 // der_signature must be encoded as hexadecimal
-pub fn verify_signature(public_key: &[u8], der_signature: &[u8], message: &[u8]) -> Result<bool, ()> {
+pub fn verify_signature(public_key: &[u8], der_signature: &[u8], message: &[u8]) -> Result<bool> {
     if let Ok(pub_key) = PublicKey::from_sec1_bytes(public_key) {
         if let Ok(signature) = Signature::from_der(der_signature) {
             let verifying_key = VerifyingKey::from(pub_key);
             return Ok(verifying_key.verify(message, &signature).is_ok());
         }
+        return Err(CryptoError::InvalidSignature);
     }
-
-    Err(())
+    Err(CryptoError::InvalidPubKey)
 }
 
 #[cfg(test)]
 mod tests {
     use k256::ecdsa::{DerSignature, Signature, SigningKey, VerifyingKey};
     use k256::ecdsa::signature::Verifier;
-    use crate::utils::crypto::{calculate_sha256_hash, create_signing_key, get_private_key, get_public_key, get_signature, verify_signature};
-    use super::address_to_public_key_hash;
+
+
+    use super::*;
 
     //#[test]
     fn test_address_to_pub_key_hash_conversion() {
