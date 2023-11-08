@@ -1,14 +1,14 @@
 /// Transaction.rs
 ///
-/// A Transaction is the way that is used to distribute coins to different addresses over the network
-/// A Transaction is composed of:
+/// Transaction are used to distribute coins to different addresses on the network
+/// A Transaction is made of:
 ///     - TxIn (Transaction input): Used to reference an unspent transaction output (UTXO)
 ///     - TxOut (Transaction Output): Used to change ownership of some coins to another address
 ///
 /// A Transaction is created by the Wallet, and shared to the network by the Miner
-/// Once the Wallet has created a Transaction, it will be send to the Miner, which will verify if
-///     the Transaction is correct (valid address, valid signature, referenced UTXO not already spent, etc).
-///     If Transaction is validated by the Miner, it will be added to the transaction pool (see miner.rs for more
+/// Once the Wallet has created a Transaction, it will be transmitted to a Miner, which verifies if
+///     it is correct (valid address, valid signature, referenced UTXO not already spent, etc).
+///     If the Transaction is validated by the Miner, it will be added to the transaction pool (see miner.rs for more
 ///     information on the how the Transaction is handled after it has been added to the transaction pool)
 ///
 ///
